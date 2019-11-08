@@ -136,7 +136,7 @@ extern (C++) final class Import : Dsymbol
         //printf("Import::load('%s') %p\n", toPrettyChars(), this);
         // See if existing module
         import core.stdc.stdio;
-        // HACK printf("Import::load('%s') %p\n", toPrettyChars(), this);
+        printf("Import::load('%s') %p\n", toPrettyChars(), this);
         const errors = global.errors;
         DsymbolTable dst = Package.resolve(packages, null, &pkg);
         version (none)
@@ -149,6 +149,8 @@ extern (C++) final class Import : Dsymbol
             }
         }
         auto ids = id.toString;
+        printf("Id = %s\n", cast(char*)ids);
+
         auto searchPointer = (ids in global.params.objectsMangled);
         if (searchPointer !is null)
             id = Identifier.idPool(global.params.objectsMangled[ids] ~ ids);

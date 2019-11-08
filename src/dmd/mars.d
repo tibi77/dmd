@@ -1624,9 +1624,7 @@ bool parseCommandLine(const ref Strings arguments, const size_t argc, ref Param 
             strcpy(s, (p + len));
             string pp = cast(string)s.toDString;
             global.params.objectsMangled[pp] ~= "__p__";
-            printf("%s\n", cast(char *)global.params.objectsMangled[pp]);
-            printf("Are we good here? \n");
-
+            printf("So -> %s\n", cast(char *)pp);
         }
         else if (startsWith(p + 1, "check")) // https://dlang.org/dmd.html#switch-check
         {
@@ -2726,14 +2724,17 @@ Modules createModules(ref Strings files, ref Strings libmodules)
         }
 
         location = location[0..$-2];
-        
-        auto hashValue = location[lastIndex..$];
-        auto pointerSearch = (hashValue in global.params.objectsMangled);
 
+        auto hashValue = location[lastIndex..$];
+
+        auto pointerSearch = (files[i].toDString in global.params.objectsMangled);
+
+        printf("Aici %s\n", files[i]);
         if (pointerSearch !is null) {
             global.params.objectsMangled[hashValue] ~= location;
             name = global.params.objectsMangled[hashValue]  ~ name;
         }
+        printf("Name = %s \n", cast(char*)name);
 
         auto id = Identifier.idPool(name);
         auto m = new Module(files[i].toDString, id, global.params.doDocComments, global.params.doHdrGeneration);
