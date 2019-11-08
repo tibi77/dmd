@@ -24,6 +24,7 @@ import dmd.globals;
 import dmd.identifier;
 import dmd.mtype;
 import dmd.visitor;
+import core.stdc.string;
 
 /***********************************************************
  */
@@ -134,6 +135,8 @@ extern (C++) final class Import : Dsymbol
     {
         //printf("Import::load('%s') %p\n", toPrettyChars(), this);
         // See if existing module
+        import core.stdc.stdio;
+        // HACK printf("Import::load('%s') %p\n", toPrettyChars(), this);
         const errors = global.errors;
         DsymbolTable dst = Package.resolve(packages, null, &pkg);
         version (none)
@@ -145,6 +148,11 @@ extern (C++) final class Import : Dsymbol
                 return true;
             }
         }
+        auto ids = id.toString;
+        auto searchPointer = (ids in global.params.objectsMangled);
+        if (searchPointer !is null)
+            id = Identifier.idPool(global.params.objectsMangled[ids] ~ ids);
+
         Dsymbol s = dst.lookup(id);
         if (s)
         {

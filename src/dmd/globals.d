@@ -242,6 +242,7 @@ extern (C++) struct Param
 
     uint versionlevel;                  // version level
     Array!(const(char)*)* versionids;   // version identifiers
+    string[string] objectsMangled;// the objects that the compiler is going to mangle
 
     const(char)[] defaultlibname;        // default library for non-debug builds
     const(char)[] debuglibname;          // default library for debug builds

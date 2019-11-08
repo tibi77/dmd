@@ -543,14 +543,22 @@ extern (C++) final class Module : Package
         return new Module(Loc.initial, filename, ident, doDocComment, doHdrGen);
     }
 
-    static Module load(Loc loc, Identifiers* packages, Identifier ident)
+    static Module load(Loc loc, Identifiers* packages, ref Identifier ident)
     {
         //printf("Module::load(ident = '%s')\n", ident.toChars());
         // Build module filename by turning:
         //  foo.bar.baz
         // into:
         //  foo\bar\baz
-        const(char)[] filename = getFilename(packages, ident);
+        printf("Module::load(ident = '%s', filename='%s')\n", ident.toChars(), loc.filename);
+
+        const ids = ident.toString;
+        auto origIdent = ident;
+        if (ids.length > 3 && ids[0..3] == "__p") {
+            origIdent = Identifier.idPool(ids[5..$]);
+        }
+
+        const(char)[] filename = getFilename(packages, origIdent);
         // Look for the source file
         if (const result = lookForSourceFile(filename))
             filename = result; // leaks

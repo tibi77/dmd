@@ -1617,6 +1617,17 @@ bool parseCommandLine(const ref Strings arguments, const size_t argc, ref Param 
                 return false;
             }
         }
+        else if (startsWith(p + 1, "dmangle"))
+        {
+            enum len = "-dmangle=".length;
+            char *s = cast(char*)calloc(strlen(p + len) + 1, 1);
+            strcpy(s, (p + len));
+            string pp = cast(string)s.toDString;
+            global.params.objectsMangled[pp] ~= "__p__";
+            printf("%s\n", cast(char *)global.params.objectsMangled[pp]);
+            printf("Are we good here? \n");
+
+        }
         else if (startsWith(p + 1, "check")) // https://dlang.org/dmd.html#switch-check
         {
             enum len = "-check=".length;
@@ -2694,8 +2705,39 @@ Modules createModules(ref Strings files, ref Strings libmodules)
         /* At this point, name is the D source file name stripped of
          * its path and extension.
          */
+        // if (globals.params.)
+        printf("Module::Module(filename = %s)\n", files[i]);
+        // printf("allinst = %B \n", global.Param.allinst);
+        printf("file = %s\n", files[i]);
+        string location = "";
+        int lastIndex = 0;
+                printf("\n#############################\n");
+
+        foreach (char stringIterator; files[i].toDString)
+        {
+            if (stringIterator == '/')
+            {
+                location ~= '_';
+            }
+            else
+            {
+                location ~= stringIterator;
+            }
+        }
+
+        location = location[0..$-2];
+        
+        auto hashValue = location[lastIndex..$];
+        auto pointerSearch = (hashValue in global.params.objectsMangled);
+
+        if (pointerSearch !is null) {
+            global.params.objectsMangled[hashValue] ~= location;
+            name = global.params.objectsMangled[hashValue]  ~ name;
+        }
+
         auto id = Identifier.idPool(name);
         auto m = new Module(files[i].toDString, id, global.params.doDocComments, global.params.doHdrGeneration);
+        // auto m = new Module(files[i].toDString, id, global.params.doDocComments, global.params.doHdrGeneration);
         modules.push(m);
         if (firstmodule)
         {
