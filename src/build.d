@@ -5,6 +5,12 @@ DMD builder
 Usage:
   ./build.d dmd
 
+detab, tolf, install targets - require the D Language Tools (detab.exe, tolf.exe)
+  https://github.com/dlang/tools.
+
+zip target - requires Info-ZIP or equivalent (zip32.exe)
+  http://www.info-zip.org/Zip.html#Downloads
+
 TODO:
 - add all posix.mak Makefile targets
 - support 32-bit builds
@@ -36,8 +42,11 @@ immutable rootDeps = [
     &clean,
     &checkwhitespace,
     &runCxxUnittest,
+    &detab,
+    &tolf,
     &zip,
     &html,
+    &toolchainInfo
 ];
 
 void main(string[] args)
@@ -203,8 +212,7 @@ alias lexer = makeDep!((builder, dep) => builder
     .command([env["HOST_DMD_RUN"],
         "-of" ~ dep.target,
         "-lib",
-        "-vtls",
-        "-J"~env["G"], "-J../res"]
+        "-vtls"]
         .chain(flags["DFLAGS"],
             // source files need to have relative paths in order for the code coverage
             // .lst files to be named properly for CodeCov to find them
@@ -318,7 +326,7 @@ alias dmdExe = makeDepWithArgs!((MethodInitializer!Dependency builder, Dependenc
             env["HOST_DMD_RUN"],
             "-of" ~ dep.target,
             "-vtls",
-            "-J../res",
+            "-J" ~ env["RES"],
             ].chain(extraFlags, platformArgs, flags["DFLAGS"],
                 // source files need to have relative paths in order for the code coverage
                 // .lst files to be named properly for CodeCov to find them
@@ -410,7 +418,6 @@ alias checkwhitespace = makeDep!((builder, dep) => builder
     .deps([toolsRepo])
     .commandFunction(delegate() {
         const cmdPrefix = [env["HOST_DMD_RUN"], "-run", env["TOOLS_DIR"].buildPath("checkwhitespace.d")];
-        const allSources = srcDir.dirEntries("*.{d,h,di}", SpanMode.depth).map!(e => e.name).array;
         writefln("Checking whitespace on %s files...", allSources.length);
         auto chunkLength = allSources.length;
         version (Win32)
@@ -422,6 +429,20 @@ alias checkwhitespace = makeDep!((builder, dep) => builder
             run(nextCommand);
         }
     })
+);
+
+alias detab = makeDep!((builder, dep) => builder
+    .name("detab")
+    .description("replace hard tabs with spaces")
+    .command([env["DETAB"]] ~ allSources)
+    .msg(dep.command.join(" "))
+);
+
+alias tolf = makeDep!((builder, dep) => builder
+    .name("tolf")
+    .description("convert to Unix line endings")
+    .command([env["TOLF"]] ~ allSources)
+    .msg(dep.command.join(" "))
 );
 
 alias zip = makeDep!((builder, dep) => builder
@@ -473,7 +494,7 @@ alias html = makeDep!((htmlBuilder, htmlDep) {
                 "-o-",
                 "-c",
                 "-Dd" ~ env["DOCSRC"],
-                "-J../res",
+                "-J" ~ env["RES"],
                 "-I" ~ env["D"],
                 srcDir.buildPath("project.ddoc")
                 ] ~ stddocs ~ [
@@ -485,6 +506,42 @@ alias html = makeDep!((htmlBuilder, htmlDep) {
         })
     ).array);
 });
+
+alias toolchainInfo = makeDep!((builder, dep) => builder
+    .name("toolchain-info")
+    .description("Show informations about used tools")
+    .commandFunction(() {
+
+        static void show(string what, string[] cmd)
+        {
+            string output;
+            try
+                output = run(cmd).output;
+            catch (ProcessException)
+                output = "<Not availiable>";
+
+            writefln("%s (%s): %s", what, cmd[0], output);
+        }
+
+        writeln("==== Toolchain Information ====");
+
+        version (Windows)
+            show("SYSTEM", ["systeminfo"]);
+        else
+            show("SYSTEM", ["uname", "-a"]);
+
+        show("MAKE", [env.get("MAKE", "make"), "--version"]);
+        version (Posix)
+            show("SHELL", [env.get("SHELL", nativeShell), "--version"]);  // cmd.exe --version hangs
+        show("HOST_DMD", [env["HOST_DMD_RUN"], "--version"]);
+        version (Posix)
+            show("HOST_CXX", [env["CXX"], "--version"]);
+        show("ld", ["ld", "-v"]);
+        show("gdb", ["gdb", "--version"]);
+
+        writeln("==== Toolchain Information ====\n");
+    })
+);
 
 /**
 Goes through the target list and replaces short-hand targets with their expanded version.
@@ -523,10 +580,6 @@ LtargetsLoop:
 
             case "auto-tester-build":
                 "TODO: auto-tester-all".writeln; // TODO
-                break;
-
-            case "toolchain-info":
-                "TODO: info".writeln; // TODO
                 break;
 
             case "check-examples":
@@ -755,6 +808,8 @@ void processEnvironment()
         env["HOST_DMD_KIND"] = "gdc";
 
     env["DMD_PATH"] = env["G"].buildPath("dmd").exeName;
+    env.getDefault("DETAB", "detab");
+    env.getDefault("TOLF", "tolf");
     version (Windows)
         env.getDefault("ZIP", "zip32");
     else
@@ -883,6 +938,9 @@ string detectHostCxx()
 ////////////////////////////////////////////////////////////////////////////////
 // D source files
 ////////////////////////////////////////////////////////////////////////////////
+
+/// Returns: all source files in the repository
+alias allSources = memoize!(() => srcDir.dirEntries("*.{d,h,di}", SpanMode.depth).map!(e => e.name).array);
 
 /// Returns: all source files for the compiler
 auto sourceFiles()
