@@ -152,8 +152,10 @@ extern (C++) final class Import : Dsymbol
         printf("Id = %s\n", cast(char*)ids);
 
         auto searchPointer = (ids in global.params.objectsMangled);
-        if (searchPointer !is null)
+        if (searchPointer !is null) {
+            printf("FoundId = %s Id=%s \n", cast(char*)global.params.objectsMangled[ids], cast(char*)ids);
             id = Identifier.idPool(global.params.objectsMangled[ids] ~ ids);
+        }
 
         Dsymbol s = dst.lookup(id);
         if (s)

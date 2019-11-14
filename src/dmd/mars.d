@@ -1617,14 +1617,30 @@ bool parseCommandLine(const ref Strings arguments, const size_t argc, ref Param 
                 return false;
             }
         }
-        else if (startsWith(p + 1, "dmangle"))
+        else if (startsWith(p + 1, "prefix"))
         {
-            enum len = "-dmangle=".length;
+            enum len = "-prefix=".length;
             char *s = cast(char*)calloc(strlen(p + len) + 1, 1);
+            char *ss = cast(char*)calloc(strlen(p + len) + 1, 1);
             strcpy(s, (p + len));
-            string pp = cast(string)s.toDString;
-            global.params.objectsMangled[pp] ~= "__p__";
+            string prefix = "";
+            foreach (char stringIterator; s.toDString)
+            {
+                if (stringIterator == ':')
+                {
+                    break;
+                }
+                else
+                {
+                    prefix ~= stringIterator;
+                }
+            }
+            strcpy(ss, (p + len + prefix.length + 1));
+
+            string pp = cast(string)ss.toDString;
+            global.params.objectsMangled[pp] = ("__pstart" ~ prefix);
             printf("So -> %s\n", cast(char *)pp);
+            printf("So -> %s\n", cast(char *)global.params.objectsMangled[pp]);
         }
         else if (startsWith(p + 1, "check")) // https://dlang.org/dmd.html#switch-check
         {
@@ -2707,34 +2723,33 @@ Modules createModules(ref Strings files, ref Strings libmodules)
         printf("Module::Module(filename = %s)\n", files[i]);
         // printf("allinst = %B \n", global.Param.allinst);
         printf("file = %s\n", files[i]);
-        string location = "";
-        int lastIndex = 0;
-                printf("\n#############################\n");
+        // string location = "";
+        // int lastIndex = 0;
+        printf("\n#############################\n");
 
-        foreach (char stringIterator; files[i].toDString)
-        {
-            if (stringIterator == '/')
-            {
-                location ~= '_';
-            }
-            else
-            {
-                location ~= stringIterator;
-            }
-        }
+        // foreach (char stringIterator; files[i].toDString)
+        // {
+        //     if (stringIterator == '/')
+        //     {
+        //         location ~= '_';
+        //     }
+        //     else
+        //     {
+        //         location ~= stringIterator;
+        //     }
+        // }
 
-        location = location[0..$-2];
+        // location = location[0..$-2];
 
-        auto hashValue = location[lastIndex..$];
+        // auto hashValue = location[lastIndex..$];
 
         auto pointerSearch = (files[i].toDString in global.params.objectsMangled);
 
-        printf("Aici %s\n", files[i]);
         if (pointerSearch !is null) {
-            global.params.objectsMangled[hashValue] ~= location;
-            name = global.params.objectsMangled[hashValue]  ~ name;
+            printf("prefix = %s \n", cast(char *)global.params.objectsMangled[files[i].toDString]);
+            name = global.params.objectsMangled[files[i].toDString]  ~ name ~ "pend__";
         }
-        printf("Name = %s \n", cast(char*)name);
+        printf("Final_Name = %s \n", cast(char*)name);
 
         auto id = Identifier.idPool(name);
         auto m = new Module(files[i].toDString, id, global.params.doDocComments, global.params.doHdrGeneration);

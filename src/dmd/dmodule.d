@@ -543,8 +543,21 @@ extern (C++) final class Module : Package
         return new Module(Loc.initial, filename, ident, doDocComment, doHdrGen);
     }
 
+
+
     static Module load(Loc loc, Identifiers* packages, ref Identifier ident)
     {
+
+        static pure bool startsWith(const(char)* p, string s)
+        {
+            foreach (const c; s)
+            {
+                if (c != *p)
+                    return false;
+                ++p;
+            }
+            return true;
+        }
         //printf("Module::load(ident = '%s')\n", ident.toChars());
         // Build module filename by turning:
         //  foo.bar.baz
@@ -554,19 +567,31 @@ extern (C++) final class Module : Package
 
         const ids = ident.toString;
         auto origIdent = ident;
-        if (ids.length > 3 && ids[0..3] == "__p") {
-            origIdent = Identifier.idPool(ids[5..$]);
+        int len = 0;
+
+        if (ids.length > 8 && ids[0..8] == "__pstart") {
+            auto p_ite = ident.toChars();
+            for(int i = 0; i < ids.length; i++) {
+                if (startsWith(p_ite, "pend__"))
+                    break;
+                p_ite++;
+                len++;
+            }
+            origIdent = Identifier.idPool(ids[len..$]);
         }
 
         const(char)[] filename = getFilename(packages, origIdent);
+        printf("\n\n origIdent = %s import from = %s \n", cast(char*)ids, cast(char*)filename);
+
         // Look for the source file
         if (const result = lookForSourceFile(filename))
             filename = result; // leaks
 
         auto m = new Module(loc, filename, ident, 0, 0);
-
-        if (!m.read(loc))
+        if (!m.read(loc)) {
             return null;
+        }
+
         if (global.params.verbose)
         {
             OutBuffer buf;
@@ -581,6 +606,7 @@ extern (C++) final class Module : Package
             buf.printf("%s\t(%s)", ident.toChars(), m.srcfile.toChars());
             message("import    %s", buf.peekChars());
         }
+
         m = m.parse();
 
         // Call onImport here because if the module is going to be compiled then we
@@ -722,7 +748,7 @@ extern (C++) final class Module : Package
         if (srcBuffer)
             return true; // already read
 
-        //printf("Module::read('%s') file '%s'\n", toChars(), srcfile.toChars());
+        printf("Module::read('%s') file '%s'\n", toChars(), srcfile.toChars());
         auto readResult = File.read(srcfile.toChars());
 
         return loadSourceBuffer(loc, readResult);
