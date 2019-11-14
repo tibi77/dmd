@@ -607,8 +607,8 @@ public:
             {
                 dchar c;
                 auto ppos = pos;
-                auto p = utf_decodeChar(slice.ptr, slice.length, pos, c);
-                assert(p is null, p[0..strlen(p)]);
+                const s = utf_decodeChar(slice, pos, c);
+                assert(s is null, s);
                 assert(c.isValidMangling, "The mangled name '" ~ slice ~ "' " ~
                     "contains an invalid character: " ~ slice[ppos..pos]);
             }
@@ -1002,9 +1002,8 @@ public:
             for (size_t u = 0; u < e.len;)
             {
                 dchar c;
-                const p = utf_decodeWchar(slice.ptr, slice.length, u, c);
-                if (p)
-                    e.error("%s", p);
+                if (const s = utf_decodeWchar(slice, u, c))
+                    e.error("%.*s", cast(int)s.length, s.ptr);
                 else
                     tmp.writeUTF8(c);
             }
@@ -1033,15 +1032,15 @@ public:
         buf.writeByte(m);
         buf.print(q.length);
         buf.writeByte('_');    // nbytes <= 11
-        size_t qi = 0;
-        for (char* p = cast(char*)(*buf)[].ptr + buf.length, pend = p + 2 * q.length; p < pend; p += 2, ++qi)
+        const len = buf.length;
+        auto slice = buf.allocate(2 * q.length);
+        foreach (i, c; q)
         {
-            char hi = (q[qi] >> 4) & 0xF;
-            p[0] = cast(char)(hi < 10 ? hi + '0' : hi - 10 + 'a');
-            char lo = q[qi] & 0xF;
-            p[1] = cast(char)(lo < 10 ? lo + '0' : lo - 10 + 'a');
+            char hi = (c >> 4) & 0xF;
+            slice[i * 2] = cast(char)(hi < 10 ? hi + '0' : hi - 10 + 'a');
+            char lo = c & 0xF;
+            slice[i * 2 + 1] = cast(char)(lo < 10 ? lo + '0' : lo - 10 + 'a');
         }
-        buf.setsize(buf.length + 2 * q.length);
     }
 
     override void visit(ArrayLiteralExp e)

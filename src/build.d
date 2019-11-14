@@ -22,7 +22,6 @@ version(CoreDdoc) {} else:
 
 import std.algorithm, std.conv, std.datetime, std.exception, std.file, std.format, std.functional,
        std.getopt, std.parallelism, std.path, std.process, std.range, std.stdio, std.string, std.traits;
-import core.stdc.stdlib : exit;
 
 const thisBuildScript = __FILE_FULL_PATH__.buildNormalizedPath;
 const srcDir = thisBuildScript.dirName;
@@ -46,10 +45,25 @@ immutable rootDeps = [
     &tolf,
     &zip,
     &html,
-    &toolchainInfo
+    &toolchainInfo,
+    &style,
 ];
 
-void main(string[] args)
+int main(string[] args)
+{
+    try
+    {
+        runMain(args);
+        return 0;
+    }
+    catch (BuildException e)
+    {
+        writeln(e.msg);
+        return 1;
+    }
+}
+
+void runMain(string[] args)
 {
     int jobs = totalCPUs;
     bool calledFromMake = false;
@@ -279,7 +293,7 @@ alias versionFile = makeDep!((builder, dep) => builder
         {
             try
             {
-                auto gitResult = ["git", "describe", "--dirty"].run;
+                auto gitResult = ["git", "describe", "--dirty"].tryRun;
                 if (gitResult.status == 0)
                     ver = gitResult.output.strip;
             }
@@ -337,7 +351,7 @@ alias dmdExe = makeDepWithArgs!((MethodInitializer!Dependency builder, Dependenc
 alias dmdDefault = makeDep!((builder, dep) => builder
     .name("dmd")
     .description("Build dmd")
-    .deps([dmdConf, dmdExe(null, null)])
+    .deps([dmdExe(null, null), dmdConf])
 );
 
 /// Dependency to run the DMD unittest executable.
@@ -385,7 +399,7 @@ alias runCxxUnittest = makeDep!((runCxxBuilder, runCxxDep) {
         .description("Run the C++ unittests")
         .msg("(RUN) CXX-UNITTEST");
     version (Windows) runCxxBuilder
-        .commandFunction({ enforce(0, "Running the C++ unittests is not supported on Windows yet"); });
+        .commandFunction({ abortBuild("Running the C++ unittests is not supported on Windows yet"); });
     else runCxxBuilder
         .deps([cxxUnittestExe])
         .command([cxxUnittestExe.target]);
@@ -404,10 +418,14 @@ alias clean = makeDep!((builder, dep) => builder
 
 alias toolsRepo = makeDep!((builder, dep) => builder
     .commandFunction(delegate() {
-        if (!env["TOOLS_DIR"].exists)
+        auto toolsDir = env["TOOLS_DIR"];
+        if (!toolsDir.exists)
         {
-            writefln("cloning tools repo to '%s'...", env["TOOLS_DIR"]);
-            run(["git", "clone", "--depth=1", env["GIT_HOME"] ~ "/tools", env["TOOLS_DIR"]]);
+            writefln("cloning tools repo to '%s'...", toolsDir);
+            version(Win32)
+                // Win32-git seems to confuse C:\... as a relative path
+                toolsDir = toolsDir.relativePath(srcDir);
+            run(["git", "clone", "--depth=1", env["GIT_HOME"] ~ "/tools", toolsDir]);
         }
     })
 );
@@ -430,6 +448,45 @@ alias checkwhitespace = makeDep!((builder, dep) => builder
         }
     })
 );
+
+alias style = makeDep!((builder, dep)
+{
+    const dscannerDir = env["G"].buildPath("dscanner");
+    alias dscanner = methodInit!(Dependency, (dscannerBuilder, dscannerDep) => dscannerBuilder
+        .name("dscanner")
+        .description("Build custom DScanner")
+        .msg("(GIT,MAKE) DScanner")
+        .target(dscannerDir.buildPath("dsc".exeName))
+        .commandFunction(()
+        {
+            run(["git", "clone", "https://github.com/dlang-community/Dscanner", dscannerDir]);
+            run(["git", "-C", dscannerDir, "checkout", "b51ee472fe29c05cc33359ab8de52297899131fe"]);
+            run(["git", "-C", dscannerDir, "submodule", "update", "--init", "--recursive"]);
+
+            // debug build is faster, but disable 'missing import' messages (missing core from druntime)
+            const makefile = dscannerDir.buildPath("makefile");
+            const content = readText(makefile);
+            File(makefile, "w").lockingTextWriter.replaceInto(content, "dparse_verbose", "StdLoggerDisableWarning");
+
+            run([env.get("MAKE", "make"), "-C", dscannerDir, "githash", "debug"]);
+        })
+    );
+
+    builder
+        .name("style")
+        .description("Check for style errors using dscanner")
+        .msg("(DSCANNER) dmd")
+        .deps([dscanner])
+        // Disabled because we need to build a patched dscanner version
+        // .command([
+        //     "dub", "-q", "run", "-y", "dscanner", "--", "--styleCheck", "--config",
+        //     srcDir.buildPath(".dscanner.ini"), srcDir.buildPath("dmd"), "-I" ~ srcDir
+        // ])
+        .command([
+            dscanner.target, "--styleCheck", "--config", srcDir.buildPath(".dscanner.ini"),
+            srcDir.buildPath("dmd"), "-I" ~ srcDir
+        ]);
+});
 
 alias detab = makeDep!((builder, dep) => builder
     .name("detab")
@@ -462,14 +519,6 @@ alias html = makeDep!((htmlBuilder, htmlDep) {
     htmlBuilder
         .name("html")
         .description("Generate html docs, requires DMD and STDDOC to be set");
-    if (env.get("DMD", null).length == 0)
-    {
-        htmlBuilder.commandFunction(delegate() {
-            writefln("ERROR: cannot build '%s' unless DMD is set", htmlDep.name);
-        });
-        return;
-    }
-
     static string d2html(string sourceFile)
     {
         const ext = sourceFile.extension();
@@ -488,9 +537,9 @@ alias html = makeDep!((htmlBuilder, htmlDep) {
             .sources(sourceArray)
             .target(env["DOC_OUTPUT_DIR"].buildPath(d2html(source)[srcDir.length + 1..$]
                 .replace(dirSeparator, "_")))
-            .deps([versionFile, sysconfDirFile])
+            .deps([dmdDefault, versionFile, sysconfDirFile])
             .command([
-                env["DMD"],
+                dmdDefault.deps[0].target,
                 "-o-",
                 "-c",
                 "-Dd" ~ env["DOCSRC"],
@@ -516,7 +565,7 @@ alias toolchainInfo = makeDep!((builder, dep) => builder
         {
             string output;
             try
-                output = run(cmd).output;
+                output = tryRun(cmd).output;
             catch (ProcessException)
                 output = "<Not availiable>";
 
@@ -612,10 +661,8 @@ LtargetsLoop:
                         }
                     }
                 }
-                writefln("ERROR: Target `%s` is unknown.", t);
-                writeln;
-                exit(1);
-                break;
+
+                abortBuild("Target `" ~ t ~ "` is unknown.");
         }
     }
     return newTargets.data;
@@ -670,8 +717,7 @@ void parseEnvironment()
             }
             else
             {
-                writefln("Error: DDEBUG is not an expected value '%s'", ddebug);
-                exit(1);
+                abortBuild("DDEBUG is not an expected value: " ~ ddebug);
             }
         }
     }
@@ -779,8 +825,7 @@ void parseEnvironment()
 
     if (!env["HOST_DMD_PATH"].exists)
     {
-        stderr.writefln("No DMD compiler is installed. Try AUTO_BOOTSTRAP=1 or manually set the D host compiler with HOST_DMD");
-        exit(1);
+        abortBuild("No DMD compiler is installed. Try AUTO_BOOTSTRAP=1 or manually set the D host compiler with HOST_DMD");
     }
 }
 
@@ -910,7 +955,7 @@ void processEnvironmentCxx()
     // Remove when the minimally required D version becomes 2.082 or later
     if (env["HOST_DMD_KIND"] == "dmd")
     {
-        const output = run([ env["HOST_DMD_RUN"], "--version" ]).output;
+        const output = run([ env["HOST_DMD_RUN"], "--version" ]);
 
         if (output.canFind("v2.079", "v2.080", "v2.081"))
             cxxFlags ~= "-DDMD_VERSION=2080";
@@ -1395,7 +1440,7 @@ class Dependency
 
             if (command)
             {
-                command.runCanThrow;
+                command.run;
             }
         }
     }
@@ -1450,18 +1495,44 @@ auto log(T...)(T args)
 }
 
 /**
+Aborts the current build
+
+TODO:
+    - Display detailed error messages
+    - Handle spawned processes
+
+Params:
+    msg = error message to display
+
+Throws: BuildException with the supplied message
+
+Returns: nothing but enables `throw abortBuild` to convey the resulting behavior
+*/
+BuildException abortBuild(string msg = "Build failed!")
+{
+    throw new BuildException(msg);
+}
+
+class BuildException : Exception
+{
+    this(string msg) { super(msg); }
+}
+
+/**
 The directory where all run commands are executed from.  All relative file paths
 in a `run` command must be relative to `runDir`.
 */
 alias runDir = srcDir;
 
 /**
-Run a command and optionally log the invocation
+Run a command which may not succeed and optionally log the invocation.
 
 Params:
     args = the command and command arguments to execute
+
+Returns: a tuple (status, output)
 */
-auto run(T)(T args)
+auto tryRun(T)(T args)
 {
     args = args.filter!(a => !a.empty).array;
     log("Run: %s", args.join(" "));
@@ -1474,14 +1545,15 @@ and throws an exception for a non-zero exit code.
 
 Params:
     args = the command and command arguments to execute
+
+Returns: any output of the executed command
 */
-auto runCanThrow(T)(T args)
+auto run(T)(T args)
 {
-    auto res = run(args);
+    auto res = tryRun(args);
     if (res.status)
     {
-        writeln(res.output ? res.output : format("last command failed with exit code %s", res.status));
-        exit(1);
+        abortBuild(res.output ? res.output : format("Last command failed with exit code %s", res.status));
     }
     return res.output;
 }
