@@ -631,14 +631,6 @@ LtargetsLoop:
                 "TODO: auto-tester-all".writeln; // TODO
                 break;
 
-            case "check-examples":
-                "TODO: cxx-unittest".writeln; // TODO
-                break;
-
-            case "build-examples":
-                "TODO: build-examples".writeln; // TODO
-                break;
-
             case "install":
                 "TODO: install".writeln; // TODO
                 break;
@@ -1486,12 +1478,13 @@ alias makeDepWithArgs(alias Func) = memoize!(methodInit!(Dependency, Func, Param
 Logging primitive
 
 Params:
-    args = the data to write to the log
+    spec = a format specifier
+    args = the data to format to the log
 */
-auto log(T...)(T args)
+auto log(T...)(string spec, T args)
 {
     if (verbose)
-        writefln(args);
+        writefln(spec, args);
 }
 
 /**
